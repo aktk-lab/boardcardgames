@@ -1,239 +1,91 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>影と光｜拡大ボード＋移動アニメ（PWA）</title>
-  <meta name="theme-color" content="#0e1117" />
-  <link rel="manifest" href="./manifest.json" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スライディングパズル</title>
+<style>
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #f0f0f0;
+    font-family: Arial, sans-serif;
+  }
+  h1 {
+    margin-bottom: 20px;
+  }
+  .puzzle {
+    display: grid;
+    grid-template-columns: repeat(4, 120px);
+    grid-template-rows: repeat(4, 120px);
+    gap: 5px;
+  }
+  .tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #4CAF50;
+    color: white;
+    font-size: 2em;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+  .tile:active {
+    transform: scale(0.95);
+  }
+  .empty {
+    background-color: transparent;
+    cursor: default;
+  }
+</style>
 </head>
 <body>
-<header>
-  <h1>影と光｜拡大ボード＋移動アニメ版（修正版）</h1>
-  <div class="ctrl">
-    <button id="btnMinus" class="btn" title="縮小">−</button>
-    <input id="zoom" class="slider" type="range" min="70" max="180" step="10" value="120" />
-    <button id="btnPlus" class="btn" title="拡大">＋</button>
-    <button id="btnFit" class="btn" title="画面幅にフィット">フィット</button>
-    <button id="btnFS" class="btn" title="フルスクリーン">全画面</button>
-    <span id="zoomBadge" class="badge">セル：120px</span>
-    <span id="phaseBadge" class="badge">—</span>
-    <span id="turnBadge" class="badge">—</span>
-    <button id="btnToggleAI" class="btn">AI後手：OFF</button>
-    <button id="btnReset" class="btn">リセット</button>
-  </div>
-</header>
-
-<main>
-  <aside>
-    <div class="legend">中央4マス＝水晶（次ターン 移動+1）／ 相性：☀(光)⇔☾(影)／同種は取れない</div>
-    <div id="log" style="margin-top:8px"></div>
-  </aside>
-  <section id="boardCard">
-    <div id="holder"><canvas id="board" width="960" height="960" aria-label="影と光 盤面"></canvas></div>
-  </section>
-</main>
-<div id="err"></div>
-
+  <h1>スライディングパズル</h1>
+  <div class="puzzle" id="puzzle"></div>
 <script>
-(()=>{
-
-  const err = document.getElementById('err');
-  window.addEventListener('error', (e)=>{ err.style.display='block'; err.innerHTML = '<b>エラー:</b> '+ (e.message||e.error); console.error(e.error||e.message); });
-  window.addEventListener('unhandledrejection', (e)=>{ err.style.display='block'; err.innerHTML = '<b>Promiseエラー:</b> '+ (e.reason && e.reason.message ? e.reason.message : e.reason); console.error(e.reason); });
-
-  const N=8, CRYSTAL=new Set(['3,3','4,3','3,4','4,4']), P1=1, P2=2, LIGHT='light', SHADOW='shadow';
-  let S, aiOn=false, anim=null;
-  let cell=120; const minCell=70, maxCell=180;
-  const canvas=document.getElementById('board'); const ctx=canvas.getContext('2d'); const holder=document.getElementById('holder');
-  const logEl=document.getElementById('log');
-  const zoom=document.getElementById('zoom'); const zoomBadge=document.getElementById('zoomBadge');
-  const phaseBadge=document.getElementById('phaseBadge'); const turnBadge=document.getElementById('turnBadge');
-
-  function log(m){ const t=new Date().toLocaleTimeString(); logEl.innerHTML+=`[${t}] ${m}<br>`; logEl.scrollTop=logEl.scrollHeight; }
-
-  document.getElementById('btnMinus').addEventListener('click', ()=>setCell(Math.max(minCell, cell-10)));
-  document.getElementById('btnPlus').addEventListener('click',  ()=>setCell(Math.min(maxCell, cell+10)));
-  document.getElementById('btnFit').addEventListener('click',   ()=>fitToWidth());
-  document.getElementById('btnFS').addEventListener('click',    ()=>{ const el=document.documentElement; if(!document.fullscreenElement){ el.requestFullscreen?.(); } else { document.exitFullscreen?.(); } });
-  document.getElementById('btnToggleAI').addEventListener('click', (e)=>{ aiOn=!aiOn; e.currentTarget.textContent=`AI後手：${aiOn?'ON':'OFF'}`; if(aiOn && S.turn===P2) setTimeout(aiMove, 260); });
-  document.getElementById('btnReset').addEventListener('click', ()=>{ init(); drawAll(); });
-  window.addEventListener('resize', ()=>{ resizeCanvas(); drawAll(); });
-  zoom.addEventListener('input', ()=> setCell(parseInt(zoom.value,10)||120));
-
-  let hover=null;
-  const onPoint = (e)=>{
-    if(anim) return;
-    const c = eventToCell(e);
-    if(!c) return;
-    const clicked = pieceAt(c.x,c.y);
-    if(S.turn!==P1){ log('AIの手番です'); return; }
-    if(S.selected){
-      const mv = legalMoves(S.selected).find(m=>m.x===c.x && m.y===c.y);
-      if(mv){ doAnimatedMove(S.selected, c.x, c.y); return; }
+  const puzzle = document.getElementById('puzzle');
+  let tiles = [];
+  function init() {
+    let numbers = [...Array(15).keys()].map(x => x + 1);
+    numbers.push(null);
+    numbers = shuffle(numbers);
+    puzzle.innerHTML = '';
+    tiles = numbers.map((num, i) => {
+      const tile = document.createElement('div');
+      tile.classList.add('tile');
+      if (num === null) {
+        tile.classList.add('empty');
+      } else {
+        tile.textContent = num;
+        tile.addEventListener('click', () => moveTile(i));
+      }
+      puzzle.appendChild(tile);
+      return tile;
+    });
+  }
+  function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
     }
-    if(clicked && clicked.owner===P1){ S.selected = clicked; drawAll(); log('駒を選択'); return; }
-  };
-  canvas.addEventListener('click', onPoint, {passive:true});
-  canvas.addEventListener('pointerdown', onPoint, {passive:true});
-
-  canvas.addEventListener('mousemove', (e)=>{
-    if(anim) return;
-    const c = eventToCell(e);
-    const key = c? `${c.x},${c.y}` : null;
-    if(!hover || hover.key!==key){ hover = c? {...c, key}: null; updateCursor(); drawAll(); }
-  }, {passive:true});
-  canvas.addEventListener('mouseleave', ()=>{ hover=null; updateCursor(); drawAll(); }, {passive:true});
-
-  function updateCursor(){
-    if(!hover){ canvas.classList.remove('cursor-move','cursor-aim'); return; }
-    const clicked = pieceAt(hover.x,hover.y);
-    if(S.selected){
-      const can = legalMoves(S.selected).some(m=>m.x===hover.x && m.y===hover.y);
-      canvas.classList.toggle('cursor-aim', can);
-      canvas.classList.toggle('cursor-move', !can && clicked && clicked.owner===P1);
-      if(!can && (!clicked || clicked.owner!==P1)){ canvas.classList.remove('cursor-move'); }
-    }else{
-      canvas.classList.toggle('cursor-move', !!(clicked && clicked.owner===P1));
-      canvas.classList.remove('cursor-aim');
+    return array;
+  }
+  function moveTile(index) {
+    const emptyIndex = tiles.findIndex(t => t.classList.contains('empty'));
+    const validMoves = [emptyIndex - 1, emptyIndex + 1, emptyIndex - 4, emptyIndex + 4];
+    if (validMoves.includes(index)) {
+      tiles[emptyIndex].classList.remove('empty');
+      tiles[emptyIndex].textContent = tiles[index].textContent;
+      tiles[index].classList.add('empty');
+      tiles[index].textContent = '';
     }
   }
-
-  function init(){
-    S = { pieces:[], phase:'昼', phaseRemain:rnd(3,5), turn:P1, selected:null, crystal:new Map() };
-    const p1 = shuffle(ranks([0,1])).slice(0,10), p2 = shuffle(ranks([6,7])).slice(0,10);
-    let id=0;
-    for(let i=0;i<10;i++){ const [x,y]=p1[i]; S.pieces.push({id:id++,owner:P1,kind:i<5?LIGHT:SHADOW,x,y,alive:true}); }
-    for(let i=0;i<10;i++){ const [x,y]=p2[i]; S.pieces.push({id:id++,owner:P2,kind:i<5?LIGHT:SHADOW,x,y,alive:true}); }
-    setCell(cell); updateBadges(); log('初期化完了：あなたが先手（青）');
-  }
-  function setCell(px){ cell=px; zoom.value=px; zoomBadge.textContent=`セル：${px}px`; resizeCanvas(); }
-  function fitToWidth(){ const cssAvail = Math.min(holder.clientWidth, 1200); let px=Math.floor(cssAvail/N); setCell(Math.max(minCell, Math.min(maxCell, px))); }
-  function resizeCanvas(){
-    const css = cell*N, dpr=window.devicePixelRatio||1;
-    canvas.style.width=css+'px'; canvas.style.height=css+'px';
-    canvas.width = Math.floor(css*dpr); canvas.height=Math.floor(css*dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-  }
-
-  function drawAll(){ drawBoard(); drawPieces(); drawSelection(); drawHover(); }
-  function drawBoard(){
-    const CELL = canvas.width/(window.devicePixelRatio||1)/N;
-    for(let r=0;r<N;r++){ for(let c=0;c<N;c++){
-      const x=c*CELL, y=(N-1-r)*CELL; const dark=(r+c)%2===1;
-      ctx.fillStyle = dark? getVar('--squareB') : getVar('--squareA');
-      if(CRYSTAL.has(`${c},${r}`)) ctx.fillStyle = getVar('--crystal');
-      ctx.fillRect(x,y,CELL,CELL);
-    } }
-  }
-  function drawPieces(){
-    const CELL = canvas.width/(window.devicePixelRatio||1)/N;
-    for(const p of S.pieces){
-      if(!p.alive) continue;
-      const pos = (anim && anim.id===p.id)? animPos(anim) : {x:p.x, y:p.y};
-      const x = pos.x*CELL + CELL/2, y=(N-1-pos.y)*CELL + CELL/2;
-      ctx.beginPath(); ctx.arc(x,y, CELL*0.36, 0, Math.PI*2);
-      ctx.fillStyle = p.kind===LIGHT? '#ffd166' : '#2d2a32'; ctx.fill();
-      ctx.lineWidth = Math.max(3, CELL*0.05);
-      ctx.strokeStyle = p.owner===P1? getVar('--p1') : getVar('--p2'); ctx.stroke();
-      ctx.fillStyle = p.kind===LIGHT? '#1c1b1b' : '#eaeaea';
-      ctx.font = (CELL*0.54)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(p.kind===LIGHT?'☀':'☾', x, y+2);
-    }
-  }
-  function drawSelection(){
-    if(!S.selected) return;
-    const CELL = canvas.width/(window.devicePixelRatio||1)/N, s=S.selected;
-    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(s.x*CELL,(N-1-s.y)*CELL,CELL,CELL);
-    for(const m of legalMoves(s)){
-      const cx=m.x*CELL+CELL/2, cy=(N-1-m.y)*CELL+CELL/2;
-      ctx.beginPath(); ctx.arc(cx,cy,CELL*0.12,0,Math.PI*2);
-      ctx.fillStyle = m.capture? getVar('--cap') : getVar('--hint'); ctx.fill();
-      ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,.25)'; ctx.stroke();
-    }
-  }
-  function drawHover(){
-    if(!hover) return; const CELL = canvas.width/(window.devicePixelRatio||1)/N;
-    const {x,y} = hover; ctx.strokeStyle='rgba(255,255,255,.25)'; ctx.lineWidth=Math.max(2, CELL*0.04);
-    ctx.strokeRect(x*CELL+1,(N-1-y)*CELL+1,CELL-2,CELL-2);
-  }
-
-  function eventToCell(e){
-    const rect=canvas.getBoundingClientRect(); const cssCell = rect.width / N;
-    const x = Math.floor((e.clientX - rect.left)/cssCell);
-    const y = (N-1) - Math.floor((e.clientY - rect.top)/cssCell);
-    if(x<0||x>=N||y<0||y>=N) return null; return {x,y};
-  }
-  function pieceAt(x,y){ return S.pieces.find(p=>p.alive && p.x===x && p.y===y); }
-  function canCapture(a,d){ if(!d||a.owner===d.owner) return false; if(a.kind===d.kind) return false; return (a.kind===LIGHT&&d.kind===SHADOW)||(a.kind===SHADOW&&d.kind===LIGHT); }
-  function moveRange(p){ let r=1; if(S.crystal.get(p.id)) r+=1; if(S.phase==='昼'&&p.kind===LIGHT) r+=1; if(S.phase==='夜'&&p.kind===SHADOW) r+=1; return r; }
-  function legalMoves(p){ const max=moveRange(p), res=[], dirs=[[1,0],[-1,0],[0,1],[0,-1]]; for(const [dx,dy] of dirs){ for(let s=1;s<=max;s++){ const nx=p.x+dx*s, ny=p.y+dy*s; if(nx<0||nx>=8||ny<0||ny>=8) break; const occ=pieceAt(nx,ny); if(!occ){ res.push({x:nx,y:ny}); } else { if(canCapture(p,occ)) res.push({x:nx,y:ny,capture:true}); break; } } } return res; }
-
-  function doAnimatedMove(p, x, y){
-    const target = pieceAt(x,y);
-    const captured = target && canCapture(p,target) ? target : null;
-    const start = {x:p.x, y:p.y}, end = {x, y};
-    anim = { id:p.id, start, end, t0:performance.now(), dur:240, captured };
-    requestAnimationFrame(tickAnim);
-  }
-  function animPos(a){
-    const t = (performance.now() - a.t0) / a.dur;
-    const u = t<0?0: t>1?1: t;
-    const uu = u<.5 ? 2*u*u : -1 + (4 - 2*u) * u;
-    return { x: a.start.x + (a.end.x - a.start.x)*uu, y: a.start.y + (a.end.y - a.start.y)*uu };
-  }
-  function tickAnim(){
-    if(!anim) return;
-    drawAll();
-    const t = (performance.now() - anim.t0) / anim.dur;
-    if(t >= 1){
-      const piece = S.pieces.find(q=>q.id===anim.id);
-      if(anim.captured){ anim.captured.alive=false; log('捕獲成功'); }
-      piece.x = anim.end.x; piece.y = anim.end.y;
-      if(CRYSTAL.has(`${piece.x},${piece.y}`)) S.crystal.set(piece.id,2);
-      anim = null; drawAll(); endTurn();
-    } else {
-      requestAnimationFrame(tickAnim);
-    }
-  }
-
-  function endTurn(){
-    S.turn = S.turn===P1?P2:P1;
-    S.phaseRemain -= 1;
-    if(S.phaseRemain<=0){ S.phase = S.phase==='昼'? '夜':'昼'; S.phaseRemain=rnd(3,5); log(`◆ 昼夜が切替：${S.phase}`); }
-    for(const q of S.pieces){ if(!q.alive||q.owner!==S.turn) continue; if(S.crystal.get(q.id)) S.crystal.set(q.id, S.crystal.get(q.id)-1); }
-    updateBadges(); drawAll();
-    if(aiOn && S.turn===P2) setTimeout(aiMove, 280);
-  }
-
-  function aiMove(){
-    if(anim){ setTimeout(aiMove, 60); return; }
-    const my = S.pieces.filter(p=>p.alive&&p.owner===P2);
-    let best=null;
-    for(const p of my){ for(const m of legalMoves(p)){ const score=(m.capture?100:0)+(7-m.y)*2+(CRYSTAL.has(`${m.x},${m.y}`)?1:0); if(!best||score>best.s) best={p,m,s:score}; } }
-    if(best){ doAnimatedMove(best.p, best.m.x, best.m.y); } else { endTurn(); }
-  }
-
-  function updateBadges(){
-    phaseBadge.textContent = `位相：${S.phase}（残${S.phaseRemain}）`;
-    turnBadge.textContent  = `手番：${S.turn===P1?'あなた(P1)':'AI(P2)'}`;
-  }
-
-  function rnd(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
-  function ranks(rows){ const out=[]; for(const r of rows){ for(let x=0;x<8;x++) out.push([x,r]); } return out; }
-  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
-  function getVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
-  init(); drawAll();
-})();
+  init();
 </script>
 </body>
-<script>
-  if ('serviceWorker' in navigator) { 
-    window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js'));
-  }
-</script>
 </html>
